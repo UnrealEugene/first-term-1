@@ -8,7 +8,7 @@
 const uint64_t MAX_DIGIT = std::numeric_limits<uint64_t>::max();
 const uint64_t BASE_POWER2 = 64;
 
-const big_integer ZERO = big_integer();
+const big_integer ZERO;
 
 static bool add_overflow_(uint64_t left, uint64_t right, bool carry = false) {
     return left > MAX_DIGIT - right || (carry && left + right == MAX_DIGIT);
@@ -125,7 +125,7 @@ bool big_integer::sign() const {
 
 
 void big_integer::set_sign_(bool new_sign) {
-    sign_ = (*this) != ZERO && new_sign;
+    sign_ = (data_.size() != 1 || data_[0] != 0) && new_sign;
 }
 
 
