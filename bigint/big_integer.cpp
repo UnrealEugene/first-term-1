@@ -79,17 +79,8 @@ big_integer::big_integer(const unsigned long long& val) :
 
 big_integer::big_integer(const std::string& str) {
     sign_ = false;
-    size_t i = 0;
-    bool new_sign;
-    if (str[i] == '-') {
-        new_sign = true;
-        i++;
-    } else if (str[i] == '+') {
-        new_sign = false;
-        i++;
-    } else {
-        new_sign = false;
-    }
+    size_t i = str[0] == '-' || str[0] == '+';
+    bool new_sign = str[0] == '-';
 
     const int DIGITS_COUNT = 19;  // 19 -- max power of 10 less than 2^64
     const uint64_t POWER_10_DIGITS = 10000000000000000000ULL;  // 10^19 -- max power of 10 less than 2^64
@@ -135,10 +126,7 @@ void big_integer::switch_sign_() {
 
 
 big_integer big_integer::abs_() const {
-    if (sign()) {
-        return -(*this);
-    }
-    return (*this);
+    return sign() ? -(*this) : (*this);
 }
 
 
