@@ -17,10 +17,8 @@ class big_integer {
     using storage_t = std::vector<uint64_t>;
     storage_t data_;
     bool sign_;
- private:
     void set_sign_(bool);
     void switch_sign_();
-    bool is_zero_() const;
     big_integer abs_() const;
     uint64_t div_short_(uint64_t);
     void two_complement_();
