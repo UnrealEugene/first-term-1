@@ -3,12 +3,12 @@
 #include <cassert>
 #include <algorithm>
 #include <tuple>
-#include <iostream>
 #include "big_integer.h"
 
 const uint64_t MAX_DIGIT = std::numeric_limits<uint64_t>::max();
 const uint64_t BASE_POWER2 = 64;
 
+const big_integer ZERO = big_integer();
 
 static bool add_overflow_(uint64_t left, uint64_t right, bool carry = false) {
     return left > MAX_DIGIT - right || (carry && left + right == MAX_DIGIT);
@@ -37,21 +37,22 @@ static std::pair<uint64_t, uint64_t> div_mod_(uint64_t upper_left, uint64_t lowe
 
 static uint64_t soft_div(uint64_t upper_left, uint64_t lower_left, uint64_t right) {
     assert(right != 0);
-    if (upper_left >= right)
+    if (upper_left >= right) {
         return MAX_DIGIT;
+    }
     return div_mod_(upper_left, lower_left, right).first;
 }
 
 static uint64_t iabs_(const int& x) {
-    return x >= 0 ? (unsigned) x : -((unsigned) x);
+    return x >= 0 ? static_cast<unsigned>(x) : -static_cast<unsigned>(x);
 }
 
 static uint64_t labs_(const long& x) {
-    return x >= 0 ? (unsigned long) x : -((unsigned long) x);
+    return x >= 0 ? static_cast<unsigned long>(x) : -static_cast<unsigned long>(x);
 }
 
 static uint64_t llabs_(const long long& x) {
-    return x >= 0 ? (unsigned long long) x : -((unsigned long long) x);
+    return x >= 0 ? static_cast<unsigned long long>(x) : -static_cast<unsigned long long>(x);
 }
 
 big_integer::big_integer() :
@@ -124,7 +125,7 @@ bool big_integer::sign() const {
 
 
 void big_integer::set_sign_(bool new_sign) {
-    sign_ = !is_zero_() && new_sign;
+    sign_ = (*this) != ZERO && new_sign;
 }
 
 
@@ -134,14 +135,10 @@ void big_integer::switch_sign_() {
 
 
 big_integer big_integer::abs_() const {
-    if (sign())
+    if (sign()) {
         return -(*this);
+    }
     return (*this);
-}
-
-
-bool big_integer::is_zero_() const {
-    return data_.size() == 1 && data_[0] == 0;
 }
 
 
@@ -159,8 +156,9 @@ uint64_t big_integer::div_short_(uint64_t right) {
 void big_integer::two_complement_() {
     if (sign()) {
         ++(*this);
-        for (uint64_t& i : data_)
+        for (uint64_t& i : data_) {
             i = ~i;
+        }
     }
 }
 
@@ -174,8 +172,9 @@ big_integer& big_integer::apply_bitwise_(const std::function<uint64_t(uint64_t, 
     for (size_t i = 0; i < sz; i++) {
         uint64_t l = i < data_.size() ? data_[i] : sign() ? MAX_DIGIT : 0ULL;
         uint64_t r = i < right.data_.size() ? right.data_[i] : right.sign() ? MAX_DIGIT : 0ULL;
-        if (i == data_.size())
+        if (i == data_.size()) {
             data_.push_back(0ULL);
+        }
         data_[i] = f(l, r);
     }
     set_sign_(new_sign);
@@ -186,15 +185,17 @@ big_integer& big_integer::apply_bitwise_(const std::function<uint64_t(uint64_t, 
 
 
 void big_integer::keep_invariant_() {
-    while (data_.size() > 1 && data_.back() == 0)
+    while (data_.size() > 1 && data_.back() == 0) {
         data_.pop_back();
+    }
     set_sign_(sign_);
 }
 
 
 big_integer& big_integer::operator=(const big_integer& right) {
-    if (this == &right)
+    if (this == &right) {
         return *this;
+    }
     data_ = right.data_;
     sign_ = right.sign_;
     return (*this);
@@ -241,8 +242,9 @@ big_integer& big_integer::operator-=(const big_integer& right) {
     for (size_t i = 0; i < data_.size(); i++) {
         uint64_t left_ = (i < data_.size() ? data_[i] : 0ULL);
         uint64_t right_ = (i < right.data_.size() ? right.data_[i] : 0ULL);
-        if (sign() ^ new_sign)
+        if (sign() ^ new_sign) {
             std::swap(left_, right_);
+        }
         data_[i] = left_ - right_ - carry;
         carry = sub_overflow_(left_, right_, carry);
     }
@@ -278,7 +280,7 @@ big_integer& big_integer::operator*=(const big_integer& right) {
 
 
 big_integer& big_integer::operator/=(const big_integer& right) {
-    assert(!right.is_zero_());
+    assert(right != ZERO);
 
     if (this->abs_() < right.abs_()) {
         return (*this) = 0;
@@ -328,13 +330,15 @@ big_integer& big_integer::operator%=(const big_integer& right) {
 
 
 big_integer& big_integer::operator>>=(uint64_t right) {
-    if (sign())
+    if (sign()) {
         ++(*this);
+    }
     size_t right_bits = right / BASE_POWER2;
     if (right_bits < data_.size()) {
         std::reverse(data_.begin(), data_.end());
-        while (right_bits--)
+        while (right_bits--) {
             data_.pop_back();
+        }
         std::reverse(data_.begin(), data_.end());
     } else {
         data_ = {0ULL};
@@ -348,8 +352,9 @@ big_integer& big_integer::operator>>=(uint64_t right) {
 
 
 big_integer& big_integer::operator<<=(uint64_t right) {
-    if ((*this) == 0)
+    if ((*this) == 0) {
         return (*this);
+    }
     const size_t RIGHT_BITS = right / BASE_POWER2;
     data_.resize(data_.size() + RIGHT_BITS);
     std::move_backward(data_.begin(), data_.end() - RIGHT_BITS, data_.end());
@@ -407,15 +412,18 @@ bool operator!=(const big_integer& left, const big_integer& right) {
 
 
 bool operator<(const big_integer& left, const big_integer& right) {
-    if (left.sign() && !right.sign())
+    if (left.sign() && !right.sign()) {
         return true;
-    if (!left.sign() && right.sign())
+    }
+    if (!left.sign() && right.sign()) {
         return false;
+    }
     for (size_t i = std::max(left.data_.size(), right.data_.size()); i --> 0; ) {
         uint64_t l = i < left.data_.size() ? left.data_[i] : 0ULL;
         uint64_t r = i < right.data_.size() ? right.data_[i] : 0ULL;
-        if (l != r)
+        if (l != r) {
             return left.sign() ? l > r : l < r;
+        }
     }
     return false;
 }
@@ -508,9 +516,10 @@ std::string to_string(big_integer arg) {
     bool neg = arg.sign();
     do {
         res.push_back(static_cast<char>(arg.div_short_(10) + '0'));
-    } while (!arg.is_zero_());
-    if (neg)
+    } while (arg != ZERO);
+    if (neg) {
         res.push_back('-');
+    }
     std::reverse(res.begin(), res.end());
     return res;
 }
