@@ -2,21 +2,22 @@
 #include <limits>
 #include <cassert>
 #include <algorithm>
+#include <tuple>
 #include "big_integer.h"
 
 const uint64_t MAX_DIGIT = std::numeric_limits<uint64_t>::max();
 const uint64_t BASE_POWER2 = 64;
 
 
-static bool add_overflow__(uint64_t left, uint64_t right, bool carry = false) {
+static bool add_overflow_(uint64_t left, uint64_t right, bool carry = false) {
     return left > MAX_DIGIT - right || (carry && left + right == MAX_DIGIT);
 }
 
-static bool sub_overflow__(uint64_t left, uint64_t right, bool carry = false) {
+static bool sub_overflow_(uint64_t left, uint64_t right, bool carry = false) {
     return left < right || (carry && left == right);
 }
 
-static uint64_t mul_overflow__(uint64_t left, uint64_t right) {
+static uint64_t mul_overflow_(uint64_t left, uint64_t right) {
     uint64_t upper, lower;
     __asm__("mulq %3;"
     : "=a" (lower), "=d" (upper)
@@ -24,7 +25,23 @@ static uint64_t mul_overflow__(uint64_t left, uint64_t right) {
     return upper;
 }
 
-static uint64_t abs_(const int& x) {
+// if upper_left >= right || right == 0 then UB
+static std::pair<uint64_t, uint64_t> div_mod_(uint64_t upper_left, uint64_t lower_left, uint64_t right) {
+    uint64_t result, modulo;
+    __asm__("divq %4;"
+    : "=a" (result), "=d" (modulo)
+    : "a" (lower_left), "d" (upper_left), "r" (right));
+    return {result, modulo};
+}
+
+static uint64_t soft_div(uint64_t upper_left, uint64_t lower_left, uint64_t right) {
+    assert(right != 0);
+    if (upper_left >= right)
+        return MAX_DIGIT;
+    return div_mod_(upper_left, lower_left, right).first;
+}
+
+static uint64_t iabs_(const int& x) {
     return x >= 0 ? (unsigned) x : -((unsigned) x);
 }
 
@@ -37,29 +54,29 @@ static uint64_t llabs_(const long long& x) {
 }
 
 big_integer::big_integer() :
-        data__({0ULL}), sign__(false) { }
+        data_({0ULL}), sign_(false) { }
 
 big_integer::big_integer(const int& val) :
-        data__({abs_(val)}), sign__(val < 0) { }
+        data_({iabs_(val)}), sign_(val < 0) { }
 
 big_integer::big_integer(const long& val) :
-        data__({labs_(val)}), sign__(val < 0) { }
+        data_({labs_(val)}), sign_(val < 0) { }
 
 big_integer::big_integer(const long long& val) :
-        data__({llabs_(val)}), sign__(val < 0) { }
+        data_({llabs_(val)}), sign_(val < 0) { }
 
 big_integer::big_integer(const unsigned& val) :
-        data__({val}), sign__(false) { }
+        data_({val}), sign_(false) { }
 
 big_integer::big_integer(const unsigned long& val) :
-        data__({val}), sign__(false) { }
+        data_({val}), sign_(false) { }
 
 big_integer::big_integer(const unsigned long long& val) :
-        data__({val}), sign__(false) { }
+        data_({val}), sign_(false) { }
 
 
 big_integer::big_integer(const std::string& str) {
-    sign__ = false;
+    sign_ = false;
     size_t i = 0;
     bool new_sign;
     if (str[i] == '-') {
@@ -72,13 +89,13 @@ big_integer::big_integer(const std::string& str) {
         new_sign = false;
     }
 
-    const int DIGITS_COUNT = 19;  // log_10(2^64)
-    const uint64_t POWER_10_DIGITS = 10000000000000000000ULL;  // 10^19
+    const int DIGITS_COUNT = 19;  // 19 -- max power of 10 less than 2^64
+    const uint64_t POWER_10_DIGITS = 10000000000000000000ULL;  // 10^19 -- max power of 10 less than 2^64
     uint64_t buf = 0ULL;
     size_t cur_cnt = 0;
     while (i != str.size()) {
         while (i != str.size() && cur_cnt < DIGITS_COUNT) {
-            buf = buf * 10ULL + (uint64_t) (str[i] - '0');
+            buf = buf * 10ULL + static_cast<uint64_t>(str[i] - '0');
             i++;
             cur_cnt++;
         }
@@ -96,31 +113,89 @@ big_integer::big_integer(const std::string& str) {
         (*this) += buf;
         buf = 0ULL;
     }
-    set_sign(new_sign);
+    set_sign_(new_sign);
 }
 
 
 bool big_integer::sign() const {
-    return sign__;
+    return sign_;
 }
 
 
-void big_integer::set_sign(bool new_sign) {
-    if ((*this) != 0)
-        sign__ = new_sign;
+void big_integer::set_sign_(bool new_sign) {
+    sign_ = !is_zero_() && new_sign;
 }
 
 
-void big_integer::switch_sign() {
-    set_sign(!sign__);
+void big_integer::switch_sign_() {
+    set_sign_(!sign_);
+}
+
+
+big_integer big_integer::abs_() const {
+    if (sign())
+        return -(*this);
+    return (*this);
+}
+
+
+bool big_integer::is_zero_() const {
+    return data_.size() == 1 && data_[0] == 0;
+}
+
+
+uint64_t big_integer::div_short_(uint64_t right) {
+    assert(right != 0);
+    uint64_t carry = 0;
+    for (size_t i = data_.size(); i --> 0; ) {
+        std::tie(data_[i], carry) = div_mod_(carry, data_[i], right);
+    }
+    keep_invariant_();
+    return carry;
+}
+
+
+void big_integer::two_complement_() {
+    if (sign()) {
+        ++(*this);
+        for (uint64_t& i : data_)
+            i = ~i;
+    }
+}
+
+
+big_integer& big_integer::apply_bitwise_(const std::function<uint64_t(uint64_t, uint64_t)>& f, big_integer right) {
+    size_t sz = std::max(data_.size(), right.data_.size());
+    bool new_sign = static_cast<bool>(f(sign(), right.sign()) & 1ULL);
+
+    right.two_complement_();
+    two_complement_();
+    for (size_t i = 0; i < sz; i++) {
+        uint64_t l = i < data_.size() ? data_[i] : sign() ? MAX_DIGIT : 0ULL;
+        uint64_t r = i < right.data_.size() ? right.data_[i] : right.sign() ? MAX_DIGIT : 0ULL;
+        if (i == data_.size())
+            data_.push_back(0ULL);
+        data_[i] = f(l, r);
+    }
+    set_sign_(new_sign);
+    two_complement_();
+    keep_invariant_();
+    return (*this);
+}
+
+
+void big_integer::keep_invariant_() {
+    while (data_.size() > 1 && data_.back() == 0)
+        data_.pop_back();
+    set_sign_(sign_);
 }
 
 
 big_integer& big_integer::operator=(const big_integer& right) {
     if (this == &right)
         return *this;
-    data__ = right.data__;
-    sign__ = right.sign__;
+    data_ = right.data_;
+    sign_ = right.sign_;
     return (*this);
 }
 
@@ -130,21 +205,20 @@ big_integer& big_integer::operator+=(const big_integer& right) {
         return (*this) -= -right;
     }
     if (sign() && !right.sign()) {
-        switch_sign();
+        switch_sign_();
         (*this) -= right;
-        switch_sign();
+        switch_sign_();
         return (*this);
     }
-    data__.resize(std::max(data__.size(), right.data__.size()) + 1);
-    bool carry = false;
-    for (size_t i = 0; i < data__.size(); i++) {
-        uint64_t left_ = (i < data__.size() ? data__[i] : 0ULL);
-        uint64_t right_ = (i < right.data__.size() ? right.data__[i] : 0ULL);
-        data__[i] = left_ + right_ + (uint64_t) carry;
-        carry = add_overflow__(left_, right_, carry);
+    data_.resize(std::max(data_.size(), right.data_.size()) + 1);
+    uint64_t carry = false;
+    for (size_t i = 0; i < data_.size(); i++) {
+        uint64_t left_ = (i < data_.size() ? data_[i] : 0ULL);
+        uint64_t right_ = (i < right.data_.size() ? right.data_[i] : 0ULL);
+        data_[i] = left_ + right_ + carry;
+        carry = add_overflow_(left_, right_, carry);
     }
-    while (data__.size() > 1 && data__.back() == 0ULL)
-        data__.pop_back();
+    keep_invariant_();
     return (*this);
 }
 
@@ -154,141 +228,146 @@ big_integer& big_integer::operator-=(const big_integer& right) {
         return (*this) += -right;
     }
     if (sign() && !right.sign()) {
-        switch_sign();
+        switch_sign_();
         (*this) += right;
-        switch_sign();
+        switch_sign_();
         return (*this);
     }
     bool new_sign = (*this) < right;
-    data__.resize(std::max(data__.size(), right.data__.size()));
+    data_.resize(std::max(data_.size(), right.data_.size()));
 
-    bool carry = false;
-    for (size_t i = 0; i < data__.size(); i++) {
-        uint64_t left_ = (i < data__.size() ? data__[i] : 0ULL);
-        uint64_t right_ = (i < right.data__.size() ? right.data__[i] : 0ULL);
+    uint64_t carry = false;
+    for (size_t i = 0; i < data_.size(); i++) {
+        uint64_t left_ = (i < data_.size() ? data_[i] : 0ULL);
+        uint64_t right_ = (i < right.data_.size() ? right.data_[i] : 0ULL);
         if (sign() ^ new_sign)
             std::swap(left_, right_);
-        data__[i] = left_ - right_ - (uint64_t) carry;
-        carry = sub_overflow__(left_, right_, carry);
+        data_[i] = left_ - right_ - carry;
+        carry = sub_overflow_(left_, right_, carry);
     }
-    set_sign(new_sign);
-    while (data__.size() > 1 && data__.back() == 0ULL)
-        data__.pop_back();
+    set_sign_(new_sign);
+    keep_invariant_();
     return (*this);
 }
 
 
 big_integer& big_integer::operator*=(const big_integer& right) {
     big_integer result;
-    result.data__.resize(data__.size() + right.data__.size());
+    result.data_.resize(data_.size() + right.data_.size());
 
-    for (size_t i = 0; i < data__.size(); i++) {
+    for (size_t i = 0; i < data_.size(); i++) {
         uint64_t carry = 0;
-        for (size_t j = 0; j < right.data__.size() || carry > 0; j++) {
-            uint64_t left_ = data__[i];
-            uint64_t right_ = j < right.data__.size() ? right.data__[j] : 0;
-            uint64_t upper = mul_overflow__(left_, right_);
+        for (size_t j = 0; j < right.data_.size() || carry > 0; j++) {
+            uint64_t left_ = data_[i];
+            uint64_t right_ = j < right.data_.size() ? right.data_[j] : 0;
+            uint64_t upper = mul_overflow_(left_, right_);
             uint64_t lower = left_ * right_;
-            upper += add_overflow__(lower, carry);
+            upper += add_overflow_(lower, carry);
             lower += carry;
-            upper += add_overflow__(lower, result.data__[i + j]);
-            lower += result.data__[i + j];
+            upper += add_overflow_(lower, result.data_[i + j]);
+            lower += result.data_[i + j];
             carry = upper;
-            result.data__[i + j] = lower;
+            result.data_[i + j] = lower;
         }
     }
-
-    result.set_sign(sign() ^ right.sign());
-
-    while (result.data__.size() > 1 && result.data__.back() == 0ULL)
-        result.data__.pop_back();
+    result.set_sign_(sign() ^ right.sign());
+    result.keep_invariant_();
     return (*this) = result;
 }
 
 
-big_integer& big_integer::operator/=(big_integer right) {
-    assert(right != 0);
-    big_integer result, remainder;
+big_integer& big_integer::operator/=(const big_integer& right) {
+    assert(!right.is_zero_());
+
+    if (this->abs_() < right.abs_()) {
+        return (*this) = 0;
+    }
+
     bool new_sign = sign() ^ right.sign();
-    right.set_sign(false);
-    for (size_t i = data__.size(); i --> 0; ) {
-        remainder = (remainder << BASE_POWER2) + data__[i];
-        uint64_t l = 0, r = MAX_DIGIT;
-        while (l < r) {
-            uint64_t m = r - (r - l) / 2;
-            if (remainder < right * m)
-                r = m - 1;
-            else
-                l = m;
-        }
-        result = (result << BASE_POWER2) + l;
-        remainder -= right * l;
+    if (right.data_.size() == 1) {
+        div_short_(right.data_[0]);
+        set_sign_(new_sign);
+        return (*this);
     }
-    result.set_sign(new_sign);
-    return (*this) = result;
-}
 
+    const uint64_t NORM_FACTOR = right.data_.back() == MAX_DIGIT ? 1 : MAX_DIGIT / (right.data_.back() + 1);
+    big_integer u = (*this) * NORM_FACTOR;
+    big_integer d = right * NORM_FACTOR;
 
-big_integer& big_integer::operator%=(const big_integer& right) {
-    bool new_sign = sign();
-    (*this) -= (*this) / right * right;
-    set_sign(new_sign);
+    u.data_.push_back(0);
+    u.set_sign_(false);
+    d.set_sign_(false);
+
+    size_t n = u.data_.size(), m = d.data_.size();
+    data_.resize(n - m);
+    set_sign_(new_sign);
+
+    big_integer dq;
+    for (size_t k = n - m; k --> 0; ) {
+        uint64_t qt = soft_div(u.data_[k + m], u.data_[k + m - 1], d.data_[m - 1]);
+        dq = d * qt;
+        while (qt != 0 && u < dq << BASE_POWER2 * k) {
+            --qt;
+            dq -= d;
+        }
+        data_[k] = qt;
+        u -= dq << BASE_POWER2 * k;
+    }
+    keep_invariant_();
     return (*this);
 }
 
 
-// 110101 -> 1101
-//
+big_integer& big_integer::operator%=(const big_integer& right) {
+    (*this) -= (*this) / right * right;
+    return (*this);
+}
 
-big_integer& big_integer::operator>>=(int right) {
-    assert(right >= 0);
+
+big_integer& big_integer::operator>>=(uint64_t right) {
     if (sign())
         ++(*this);
     size_t right_bits = right / BASE_POWER2;
-    if (right_bits < data__.size()) {
-        std::reverse(data__.begin(), data__.end());
+    if (right_bits < data_.size()) {
+        std::reverse(data_.begin(), data_.end());
         while (right_bits--)
-            data__.pop_back();
-        std::reverse(data__.begin(), data__.end());
+            data_.pop_back();
+        std::reverse(data_.begin(), data_.end());
     } else {
-        data__ = {0ULL};
+        data_ = {0ULL};
     }
     right %= BASE_POWER2;
-    (*this) /= 1ULL << (unsigned) right;
+    (*this) /= 1ULL << right;
     if (sign())
         --(*this);
     return (*this);
 }
 
 
-big_integer& big_integer::operator<<=(int right) {
-    assert(right >= 0);
+big_integer& big_integer::operator<<=(uint64_t right) {
     if ((*this) == 0)
         return (*this);
-    const size_t right_bits = right / BASE_POWER2;
-    if (right_bits > 0) {
-        data__.resize(data__.size() + right_bits);
-        std::move_backward(data__.begin(), data__.end() - right_bits, data__.end());
-        std::fill(data__.begin(), data__.begin() + right_bits, 0ULL);
-        right %= BASE_POWER2;
-    }
-    (*this) *= 1ULL << (unsigned) right;
-    return (*this);
+    const size_t RIGHT_BITS = right / BASE_POWER2;
+    data_.resize(data_.size() + RIGHT_BITS);
+    std::move_backward(data_.begin(), data_.end() - RIGHT_BITS, data_.end());
+    std::fill(data_.begin(), data_.begin() + RIGHT_BITS, 0ULL);
+    right %= BASE_POWER2;
+    return (*this) *= 1ULL << right;
 }
 
 
 big_integer& big_integer::operator&=(const big_integer& right) {
-    return (*this) = (*this) & right;
+    return apply_bitwise_([](uint64_t a, uint64_t b) { return a & b; }, right);
 }
 
 
 big_integer& big_integer::operator|=(const big_integer& right) {
-    return (*this) = (*this) | right;
+    return apply_bitwise_([](uint64_t a, uint64_t b) { return a | b; }, right);
 }
 
 
 big_integer& big_integer::operator^=(const big_integer& right) {
-    return (*this) = (*this) ^ right;
+    return apply_bitwise_([](uint64_t a, uint64_t b) { return a ^ b; }, right);
 }
 
 
@@ -329,12 +408,11 @@ bool operator<(const big_integer& left, const big_integer& right) {
         return true;
     if (!left.sign() && right.sign())
         return false;
-    if (left.data__.size() != right.data__.size())
-        return left.sign() ? left.data__.size() > right.data__.size() : left.data__.size() < right.data__.size();
-    for (size_t i = left.data__.size(); i --> 0; ) {
-        if (left.data__[i] != right.data__[i]) {
-            return left.sign() ? left.data__[i] > right.data__[i] : left.data__[i] < right.data__[i];
-        }
+    for (size_t i = std::max(left.data_.size(), right.data_.size()); i --> 0; ) {
+        uint64_t l = i < left.data_.size() ? left.data_[i] : 0ULL;
+        uint64_t r = i < right.data_.size() ? right.data_[i] : 0ULL;
+        if (l != r)
+            return left.sign() ? l > r : l < r;
     }
     return false;
 }
@@ -380,59 +458,34 @@ big_integer operator%(big_integer left, const big_integer& right) {
 }
 
 
-big_integer operator<<(big_integer left, int right) {
+big_integer operator<<(big_integer left, uint64_t right) {
     return left <<= right;
 }
 
 
-big_integer operator>>(big_integer left, int right) {
+big_integer operator>>(big_integer left, uint64_t right) {
     return left >>= right;
 }
 
 
-big_integer operator&(const big_integer& left, const big_integer& right) {
-    if (!left.sign() && right.sign())
-        return right & left;
-    if (left.sign() && right.sign())
-        return ~(~left | ~right);
-    big_integer _left = left, _right = right;
-    if (_left.sign() && !_right.sign()) {
-        ++_left;
-        const size_t CNT = std::min(_left.data__.size(), _right.data__.size());
-        for (size_t i = 0; i < CNT; i++)
-            _right.data__[i] &= ~_left.data__[i];
-        return _right;
-    }
-    // if (!_left.sign && !_right.sign)
-    if (_left.data__.size() > _right.data__.size())
-        std::swap(_left, _right);
-    for (size_t i = 0; i < _left.data__.size(); i++)
-        _left.data__[i] &= _right.data__[i];
-    return _left;
+big_integer operator&(big_integer left, const big_integer& right) {
+    return left &= right;
 }
 
 
-big_integer operator|(const big_integer& left, const big_integer& right) {
-    if (left.sign() || right.sign())
-        return ~(~left & ~right);
-    // if (!_left.sign && !_right.sign)
-    big_integer _left = left, _right = right;
-    if (_left.data__.size() < _right.data__.size())
-        std::swap(_left, _right);
-    for (size_t i = 0; i < _right.data__.size(); i++)
-        _left.data__[i] |= _right.data__[i];
-    return _left;
+big_integer operator|(big_integer left, const big_integer& right) {
+    return left |= right;
 }
 
 
-big_integer operator^(const big_integer& left, const big_integer& right) {
-    return (~left & right) | (left & ~right);
+big_integer operator^(big_integer left, const big_integer& right) {
+    return left ^= right;
 }
 
 
 big_integer operator-(const big_integer& val) {
     big_integer result(val);
-    result.switch_sign();
+    result.switch_sign_();
     return result;
 }
 
@@ -450,13 +503,9 @@ big_integer operator~(const big_integer& val) {
 std::string to_string(big_integer arg) {
     std::string res;
     bool neg = arg.sign();
-    arg.set_sign(false);
     do {
-        big_integer new_arg = arg;
-        new_arg /= 10;
-        res.push_back(static_cast<char>((arg - new_arg * 10).data__[0] + '0'));
-        std::swap(arg, new_arg);
-    } while (arg != 0);
+        res.push_back(static_cast<char>(arg.div_short_(10) + '0'));
+    } while (!arg.is_zero_());
     if (neg)
         res.push_back('-');
     std::reverse(res.begin(), res.end());

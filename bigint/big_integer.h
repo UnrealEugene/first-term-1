@@ -2,24 +2,31 @@
 
 #include <string>
 #include <vector>
+#include <functional>
 
 /*
- * data__ содержит цифры числа в системе счисления 2^64,
+ * data_ содержит цифры числа в системе счисления 2^64,
  * записанные начиная с младших цифр. Лидирующие нули
  * отсутствуют, кроме единственного, если число = 0
  *
- * sign__ содержит знак числа (true - отрицательное)
+ * sign_ содержит знак числа (true - отрицательное)
  */
 
 class big_integer {
-private:
+ private:
     using storage_t = std::vector<uint64_t>;
-
-    storage_t data__;
-    bool sign__;
-    void set_sign(bool);
-    void switch_sign();
-public:
+    storage_t data_;
+    bool sign_;
+ private:
+    void set_sign_(bool);
+    void switch_sign_();
+    bool is_zero_() const;
+    big_integer abs_() const;
+    uint64_t div_short_(uint64_t);
+    void two_complement_();
+    big_integer& apply_bitwise_(const std::function<uint64_t(uint64_t, uint64_t)>&, big_integer);
+    void keep_invariant_();
+ public:
     big_integer();
     big_integer(const int&);
     big_integer(const long&);
@@ -37,11 +44,11 @@ public:
     big_integer& operator+=(const big_integer&);
     big_integer& operator-=(const big_integer&);
     big_integer& operator*=(const big_integer&);
-    big_integer& operator/=(big_integer);
+    big_integer& operator/=(const big_integer&);
     big_integer& operator%=(const big_integer&);
 
-    big_integer& operator>>=(int);
-    big_integer& operator<<=(int);
+    big_integer& operator>>=(uint64_t);
+    big_integer& operator<<=(uint64_t);
     big_integer& operator&=(const big_integer&);
     big_integer& operator|=(const big_integer&);
     big_integer& operator^=(const big_integer&);
@@ -64,11 +71,11 @@ public:
     friend big_integer operator/(big_integer, const big_integer&);
     friend big_integer operator%(big_integer, const big_integer&);
 
-    friend big_integer operator<<(big_integer, int);
-    friend big_integer operator>>(big_integer, int);
-    friend big_integer operator&(const big_integer&, const big_integer&);
-    friend big_integer operator|(const big_integer&, const big_integer&);
-    friend big_integer operator^(const big_integer&, const big_integer&);
+    friend big_integer operator<<(big_integer, uint64_t);
+    friend big_integer operator>>(big_integer, uint64_t);
+    friend big_integer operator&(big_integer, const big_integer&);
+    friend big_integer operator|(big_integer, const big_integer&);
+    friend big_integer operator^(big_integer, const big_integer&);
 
     friend big_integer operator-(const big_integer&);
     friend big_integer operator+(const big_integer&);
