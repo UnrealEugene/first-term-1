@@ -3,6 +3,7 @@
 #include <cassert>
 #include <algorithm>
 #include <tuple>
+#include <iostream>
 #include "big_integer.h"
 
 const uint64_t MAX_DIGIT = std::numeric_limits<uint64_t>::max();
@@ -304,7 +305,9 @@ big_integer& big_integer::operator/=(const big_integer& right) {
 
     big_integer dq;
     for (size_t k = n - m; k --> 0; ) {
-        uint64_t qt = soft_div(u.data_[k + m], u.data_[k + m - 1], d.data_[m - 1]);
+        uint64_t qt = soft_div(k + m < u.data_.size() ? u.data_[k + m] : 0,
+                               k + m - 1 < u.data_.size() ? u.data_[k + m - 1] : 0,
+                               d.data_[m - 1]);
         dq = d * qt;
         while (qt != 0 && u < dq << BASE_POWER2 * k) {
             --qt;
