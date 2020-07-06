@@ -58,7 +58,6 @@ private:
     static T* copy_data(const T*, size_t, size_t); // O(N) strong
     static void free_data(T*, size_t); // O(N) nothrow
 
-private:
     T* data_;
     size_t size_;
     size_t capacity_;
