@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <vector>
+#include "uint_storage.h"
 #include <functional>
 
 /*
@@ -13,9 +13,8 @@
  */
 
 class big_integer {
-private:
-    using storage_t = std::vector<uint64_t>;
-    storage_t data_;
+ private:
+    uint_storage<uint64_t> data_;
     bool sign_;
     void set_sign_(bool);
     void switch_sign_();
@@ -24,7 +23,7 @@ private:
     void two_complement_();
     big_integer& apply_bitwise_(const std::function<uint64_t(uint64_t, uint64_t)>&, big_integer);
     void keep_invariant_();
-public:
+ public:
     big_integer();
     big_integer(const int&);
     big_integer(const long&);

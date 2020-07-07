@@ -56,25 +56,25 @@ static uint64_t llabs_(const long long& x) {
 }
 
 big_integer::big_integer() :
-        data_({0ULL}), sign_(false) { }
+        data_(1, 0ULL), sign_(false) { }
 
 big_integer::big_integer(const int& val) :
-        data_({iabs_(val)}), sign_(val < 0) { }
+        data_(1, iabs_(val)), sign_(val < 0) { }
 
 big_integer::big_integer(const long& val) :
-        data_({labs_(val)}), sign_(val < 0) { }
+        data_(1, labs_(val)), sign_(val < 0) { }
 
 big_integer::big_integer(const long long& val) :
-        data_({llabs_(val)}), sign_(val < 0) { }
+        data_(1, llabs_(val)), sign_(val < 0) { }
 
 big_integer::big_integer(const unsigned& val) :
-        data_({val}), sign_(false) { }
+        data_(1, val), sign_(false) { }
 
 big_integer::big_integer(const unsigned long& val) :
-        data_({val}), sign_(false) { }
+        data_(1, val), sign_(false) { }
 
 big_integer::big_integer(const unsigned long long& val) :
-        data_({val}), sign_(false) { }
+        data_(1, val), sign_(false) { }
 
 
 big_integer::big_integer(const std::string& str) {
@@ -329,7 +329,7 @@ big_integer& big_integer::operator>>=(uint64_t right) {
         }
         std::reverse(data_.begin(), data_.end());
     } else {
-        data_ = {0ULL};
+        data_ = uint_storage<uint64_t>(1, 0ULL);
     }
     right %= BASE_POWER2;
     (*this) /= 1ULL << right;
