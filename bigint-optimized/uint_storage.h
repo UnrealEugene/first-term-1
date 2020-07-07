@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 #include <iostream>
+#include <algorithm>
 #include "vector_ptr.h"
 
 template <typename T, typename = void>
@@ -107,9 +108,7 @@ struct uint_storage<T, typename std::enable_if<std::is_unsigned<T>::value>::type
             big_data_.detach();
             big_data_->resize(new_size);
         } else {
-            for (size_t i = size_; i < new_size; i++) {
-                small_data_[i] = 0;
-            }
+            std::fill(small_data_ + size_, small_data_ + new_size, 0);
             size_ = new_size;
         }
     }
@@ -163,9 +162,7 @@ struct uint_storage<T, typename std::enable_if<std::is_unsigned<T>::value>::type
     }
 
     void init_small_data(const uint_storage<T>& src) {
-        for (size_t i = 0; i < src.size_; i++) {
-            small_data_[i] = src.small_data_[i];
-        }
+        std::copy_n(src.small_data_, src.size_, small_data_);
         size_ = src.size_;
     }
 
